@@ -1,0 +1,18 @@
+[package]
+name = "rust_rss_reader"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.98"
+axum = "0.8.3"
+axum-server = "0.7.2"
+bytes = "1.10.1"
+chrono = "0.4.40"
+feed-rs = "2.3.1"
+mediatype = "0.19.20"
+reqwest = { version = "0.12.15", features = ["json", "rustls-tls"] }
+rss = "2.0.12"
+serde = { version = "1.0.219", features = ["derive"] }
+tokio = { version = "1.44.2", features = ["full"] }
+toml = "0.8.20"
