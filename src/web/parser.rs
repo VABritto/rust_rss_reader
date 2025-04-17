@@ -1,3 +1,4 @@
+use ammonia::clean;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use feed_rs::model::{Entry, Link, Text};
@@ -9,11 +10,12 @@ use std::default::Default;
 use std::io::Cursor;
 use std::str;
 use tokio::task::spawn_blocking;
+use tokio::time::{Duration, timeout};
 
 pub async fn fetch_feed(url: &str) -> Result<Vec<Entry>> {
-    let response = fetch(url)
+    let response = timeout(Duration::from_secs(10), fetch(url))
         .await
-        .context(format!("Failed to fetch feed from {}", url))?;
+        .context(format!("Failed to fetch feed from {}", url))??;
     let headers = response.headers().clone();
     let content_type = headers.get("Content-Type");
     if !content_type.map_or(false, |ct| ct.to_str().unwrap_or("").contains("xml")) {
@@ -25,13 +27,14 @@ pub async fn fetch_feed(url: &str) -> Result<Vec<Entry>> {
         .context("Failed to read response bytes")?;
 
     if let Ok(feed) = feed_parser::parse(&body[..]) {
-        return Ok(feed.entries);
+        return Ok(sanitize_and_validate_entries(feed.entries));
     }
     return fallback_to_rss(&body[..]).await;
 }
 
 async fn fallback_to_rss(body: &[u8]) -> Result<Vec<Entry>> {
     let data = body.to_vec();
+
     let entries = spawn_blocking(move || -> anyhow::Result<Vec<Entry>> {
         let cursor = Cursor::new(data);
         let channel = Channel::read_from(cursor).context("rss fallback parse failed")?;
@@ -39,7 +42,7 @@ async fn fallback_to_rss(body: &[u8]) -> Result<Vec<Entry>> {
         let content_type =
             MediaTypeBuf::from_string("text/plain".to_string()).expect("Valid media type");
 
-        let entries = channel
+        let raw_entries: Vec<Entry> = channel
             .items()
             .iter()
             .map(|item| Entry {
@@ -75,10 +78,62 @@ async fn fallback_to_rss(body: &[u8]) -> Result<Vec<Entry>> {
             })
             .collect();
 
-        Ok(entries)
+        Ok(raw_entries)
     })
     .await
     .context("spawn_blocking join error")??;
 
-    Ok(entries)
+    Ok(sanitize_and_validate_entries(entries))
+}
+
+fn sanitize_and_validate_entries(entries: Vec<Entry>) -> Vec<Entry> {
+    entries
+        .into_iter()
+        .map(|mut entry| {
+            if let Some(mut title) = entry.title {
+                title.content = clean(&title.content).to_string();
+                entry.title = Some(title);
+            }
+            if let Some(mut summary) = entry.summary {
+                summary.content = clean(&summary.content).to_string();
+                entry.summary = Some(summary);
+            }
+
+            let validated_links: Vec<Link> = entry
+                .links
+                .into_iter()
+                .filter_map(|mut link| {
+                    validated_url(&link.href).map(|valid| {
+                        link.href = valid;
+                        link
+                    })
+                })
+                .collect();
+            entry.links = validated_links;
+
+            if let Some(mut media) = entry.media.first().cloned() {
+                let validated_thumbnails = media
+                    .thumbnails
+                    .into_iter()
+                    .filter_map(|mut thumb| {
+                        validated_url(&thumb.image.uri).map(|valid| {
+                            thumb.image.uri = valid;
+                            thumb
+                        })
+                    })
+                    .collect();
+                media.thumbnails = validated_thumbnails;
+                entry.media = vec![media];
+            }
+
+            entry
+        })
+        .collect()
+}
+
+fn validated_url(raw: &str) -> Option<String> {
+    url::Url::parse(raw)
+        .ok()
+        .filter(|u| matches!(u.scheme(), "http" | "https"))
+        .map(|u| u.to_string())
 }

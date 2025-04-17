@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ammonia = "4.0.0"
 anyhow = "1.0.98"
 axum = "0.8.3"
 axum-server = "0.7.2"
@@ -16,3 +17,4 @@ rss = "2.0.12"
 serde = { version = "1.0.219", features = ["derive"] }
 tokio = { version = "1.44.2", features = ["full"] }
 toml = "0.8.20"
+url = "2.5.4"

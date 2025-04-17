@@ -1,14 +1,1 @@
-[[feeds]]
-url = "http://feeds.bbci.co.uk/news/world/rss.xml"
-title = "BBC News - World"
-tags = ["tech", "news"]
 
-[[feeds]]
-url = "https://rss.news.yahoo.com/rss/world"
-title = "Yahoo News - Latest News & Headlines"
-tags = ["tech", "news"]
-
-[[feeds]]
-url = "https://feeds.feedburner.com/blogspot/kgJyf"
-title = "Alexandria Católica"
-tags = ["católico"]

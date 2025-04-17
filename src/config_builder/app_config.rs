@@ -1,7 +1,9 @@
+use ammonia::clean;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::fs;
+use url::Url;
 
 const CONFIG_PATH: &str = "config/feeds.toml";
 
@@ -24,6 +26,30 @@ impl AppConfig {
             .context("Failed to read configuration file")?;
         let config: AppConfig =
             toml::de::from_str(&config_str).context("Failed to parse configuration")?;
-        Ok(Arc::new(config))
+
+        Ok(Arc::new(sanitize_config(config)))
     }
+}
+
+fn sanitize_config(config: AppConfig) -> AppConfig {
+    let sanitized_feeds = config
+        .feeds
+        .into_iter()
+        .filter(|feed| is_valid_url(&feed.url))
+        .map(|feed| Feed {
+            url: feed.url,
+            title: feed.title.map(|t| clean(&t)),
+            tags: feed.tags.into_iter().map(|tag| clean(tag.trim())).collect(),
+        })
+        .collect();
+
+    AppConfig {
+        feeds: sanitized_feeds,
+    }
+}
+
+fn is_valid_url(url: &str) -> bool {
+    Url::parse(url)
+        .map(|u| matches!(u.scheme(), "http" | "https"))
+        .unwrap_or(false)
 }

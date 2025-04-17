@@ -1,20 +1,28 @@
 use super::parser::fetch_feed;
 use crate::config_builder::AppConfig;
-use axum::response::Html;
+use axum::http::HeaderMap;
+use axum::response::{Html, IntoResponse};
 use feed_rs::model::Entry;
 use std::sync::Arc;
 
-pub async fn index() -> Html<String> {
-    match AppConfig::load_config_state().await {
-        Ok(config) => {
-            let html = generate_html_from_config(config.clone()).await;
-            Html(html)
-        }
-        Err(err) => Html(format!(
+pub async fn index() -> impl IntoResponse {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "Content-Security-Policy",
+        "default-src 'self'; img-src 'self' data: https:; script-src 'self';"
+            .parse()
+            .unwrap(),
+    );
+
+    let html = match AppConfig::load_config_state().await {
+        Ok(config) => generate_html_from_config(config).await,
+        Err(err) => format!(
             "<html><body><h1>Error loading config</h1><p>{}</p></body></html>",
             err
-        )),
-    }
+        ),
+    };
+
+    (headers, Html(html))
 }
 
 async fn generate_html_from_config(config: Arc<AppConfig>) -> String {
