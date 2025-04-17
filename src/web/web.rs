@@ -2,37 +2,26 @@ use super::html_render::{
     render_feed_entries, render_feed_error, render_feed_title, render_page_end, render_page_start,
 };
 use super::parser::{fallback_to_rss, fetch_feed};
-use crate::config::AppConfig;
-use anyhow::{Context, Result};
-use axum::{Router, http::StatusCode, response::Html, routing::get, routing::post};
+use crate::config_builder::AppConfig;
+use anyhow::Result;
+use axum::{Router, response::Html, routing::get, routing::post};
 use axum_server::Server;
 use feed_rs::model::Entry;
 use feed_rs::parser as feed_parser;
 use std::sync::Arc;
-use tokio::fs;
 
-pub async fn start_server(config: AppConfig) -> anyhow::Result<()> {
-    let state = Arc::new(config);
+pub async fn start_server() -> anyhow::Result<()> {
+    let state = AppConfig::load_config_state().await?;
 
     let app = Router::new()
         .route("/", get(index))
-        .route("/refresh", post(refresh_feeds))
+        .route("/refresh", post(index))
         .with_state(state);
 
     let addr = "127.0.0.1:3000".parse()?;
     Server::bind(addr).serve(app.into_make_service()).await?;
 
     Ok(())
-}
-
-pub async fn load_config(path: &str) -> anyhow::Result<Arc<AppConfig>> {
-    let config_str = fs::read_to_string(path)
-        .await
-        .context("Failed to read configuration file")?;
-    let config: AppConfig =
-        toml::de::from_str(&config_str).context("Failed to parse configuration")?;
-    let state = Arc::new(config);
-    Ok(state)
 }
 
 pub async fn fetch_and_parse_feed(url: &str) -> Result<Vec<Entry>> {
@@ -42,16 +31,6 @@ pub async fn fetch_and_parse_feed(url: &str) -> Result<Vec<Entry>> {
         return Ok(feed.entries);
     }
     return fallback_to_rss(&body[..]).await;
-}
-
-async fn refresh_feeds() -> Result<Html<String>, StatusCode> {
-    let updated_config = load_config("feeds.toml").await.map_err(|err| {
-        eprintln!("Error loading config: {:?}", err);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-    let updated_html = generate_html_from_config(updated_config).await;
-
-    Ok(Html(updated_html))
 }
 
 async fn generate_html_from_config(config: Arc<AppConfig>) -> String {
@@ -76,7 +55,14 @@ async fn generate_html_from_config(config: Arc<AppConfig>) -> String {
 }
 
 async fn index() -> Html<String> {
-    let config = load_config("feeds.toml").await.unwrap();
-    let html = generate_html_from_config(config.clone()).await;
-    Html(html)
+    match AppConfig::load_config_state().await {
+        Ok(config) => {
+            let html = generate_html_from_config(config.clone()).await;
+            Html(html)
+        }
+        Err(err) => Html(format!(
+            "<html><body><h1>Error loading config</h1><p>{}</p></body></html>",
+            err
+        )),
+    }
 }
