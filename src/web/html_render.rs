@@ -1,19 +1,10 @@
 use super::parser::fetch_feed;
 use crate::config_builder::AppConfig;
-use axum::http::HeaderMap;
 use axum::response::{Html, IntoResponse};
 use feed_rs::model::Entry;
 use std::sync::Arc;
 
 pub async fn index() -> impl IntoResponse {
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        "Content-Security-Policy",
-        "default-src 'self'; img-src 'self' data: https:; script-src 'self';"
-            .parse()
-            .unwrap(),
-    );
-
     let html = match AppConfig::load_config_state().await {
         Ok(config) => generate_html_from_config(config).await,
         Err(err) => format!(
@@ -22,7 +13,7 @@ pub async fn index() -> impl IntoResponse {
         ),
     };
 
-    (headers, Html(html))
+    Html(html)
 }
 
 async fn generate_html_from_config(config: Arc<AppConfig>) -> String {
