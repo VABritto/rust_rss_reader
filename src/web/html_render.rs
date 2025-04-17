@@ -1,6 +1,44 @@
+use super::parser::fetch_feed;
+use crate::config_builder::AppConfig;
+use axum::response::Html;
 use feed_rs::model::Entry;
+use std::sync::Arc;
 
-pub fn render_page_start() -> String {
+pub async fn index() -> Html<String> {
+    match AppConfig::load_config_state().await {
+        Ok(config) => {
+            let html = generate_html_from_config(config.clone()).await;
+            Html(html)
+        }
+        Err(err) => Html(format!(
+            "<html><body><h1>Error loading config</h1><p>{}</p></body></html>",
+            err
+        )),
+    }
+}
+
+async fn generate_html_from_config(config: Arc<AppConfig>) -> String {
+    let mut html = render_page_start();
+
+    for feed in &config.feeds {
+        let feed_title = feed.title.clone().unwrap_or(feed.url.clone());
+        html.push_str(&render_feed_title(&feed_title));
+
+        match fetch_feed(&feed.url).await {
+            Ok(entries) => {
+                html.push_str(&render_feed_entries(&entries));
+            }
+            Err(err) => {
+                html.push_str(&render_feed_error(&err.to_string()));
+            }
+        }
+    }
+
+    html.push_str(&render_page_end());
+    html
+}
+
+fn render_page_start() -> String {
     r#"
     <html>
     <head>
@@ -23,19 +61,19 @@ pub fn render_page_start() -> String {
     .to_string()
 }
 
-pub fn render_page_end() -> String {
+fn render_page_end() -> String {
     "</ul></body></html>".to_string()
 }
 
-pub fn render_feed_title(title: &str) -> String {
+fn render_feed_title(title: &str) -> String {
     format!(r#"<li><h2>{}</h2>"#, title)
 }
 
-pub fn render_feed_error(err: &str) -> String {
+fn render_feed_error(err: &str) -> String {
     format!(r#"<p>Error loading feed: {}</p></li>"#, err)
 }
 
-pub fn render_feed_entries(entries: &[Entry]) -> String {
+fn render_feed_entries(entries: &[Entry]) -> String {
     let mut html = String::from("<ul>");
     for entry in entries.iter().take(10) {
         let title = entry

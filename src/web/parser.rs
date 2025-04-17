@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use feed_rs::model::{Entry, Link, Text};
+use feed_rs::parser as feed_parser;
 use mediatype::MediaTypeBuf;
 use reqwest::get as fetch;
 use rss::Channel;
@@ -9,7 +10,7 @@ use std::io::Cursor;
 use std::str;
 use tokio::task::spawn_blocking;
 
-pub async fn fetch_feed(url: &str) -> Result<bytes::Bytes> {
+pub async fn fetch_feed(url: &str) -> Result<Vec<Entry>> {
     let response = fetch(url)
         .await
         .context(format!("Failed to fetch feed from {}", url))?;
@@ -18,13 +19,18 @@ pub async fn fetch_feed(url: &str) -> Result<bytes::Bytes> {
     if !content_type.map_or(false, |ct| ct.to_str().unwrap_or("").contains("xml")) {
         eprintln!("Expected XML but got Content-Type: {:?}", content_type);
     }
-    return response
+    let body = response
         .bytes()
         .await
-        .context("Failed to read response bytes");
+        .context("Failed to read response bytes")?;
+
+    if let Ok(feed) = feed_parser::parse(&body[..]) {
+        return Ok(feed.entries);
+    }
+    return fallback_to_rss(&body[..]).await;
 }
 
-pub async fn fallback_to_rss(body: &[u8]) -> Result<Vec<Entry>> {
+async fn fallback_to_rss(body: &[u8]) -> Result<Vec<Entry>> {
     let data = body.to_vec();
     let entries = spawn_blocking(move || -> anyhow::Result<Vec<Entry>> {
         let cursor = Cursor::new(data);
